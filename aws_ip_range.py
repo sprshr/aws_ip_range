@@ -88,8 +88,36 @@ class AWSRegion:
 
         raise TypeError(f'Unsupported type {type(ip)}')
 
+class AWSIpRangeMeta(type):
+    """
+    Metaclass for AWSIPRange class
+    Helps use methods like __contains__, __getitem__ on the class itself
+    """
 
-class AWSIpRange:
+    def _check_data(cls):
+        """
+        Checks that AWS IP Ranges exists
+        If not, it will trigger an update
+        :return:
+        """
+        if not cls._regions:
+            cls.update()
+
+    def __contains__(cls, ip: ipaddress.IPv4Address | ipaddress.IPv6Address | str):
+        # Check if an IP address belongs to AWS
+        cls._check_data()
+        for region in cls._regions.values():
+            if ip in region:
+                return True
+        return False
+
+    def __getattr__(cls, item):
+        # Return regions as class attributes
+        if item in cls._regions:
+            return cls._regions[item]
+        raise AttributeError
+
+class AWSIpRange(metaclass=AWSIpRangeMeta):
     """
     Represents the published AWS IP range
     """
@@ -104,14 +132,10 @@ class AWSIpRange:
     __create_date: datetime | None = None
 
     # AWS regions
-    __regions: dict[str, AWSRegion] = {}
+    _regions: dict[str, AWSRegion] = {}
 
     #Add the current IP Address range URL to the docstring
     __doc__ = __doc__ + __current_range_url
-
-    def __init__(self, fetch_aws_ip_ranges: bool = False):
-        if fetch_aws_ip_ranges:
-            AWSIpRange.update()
 
     @staticmethod
     def _get_cidr_version(cidr: str) -> int:
@@ -136,13 +160,13 @@ class AWSIpRange:
 
         # Get the attribute for the region
         try:
-            region = cls.__regions[key_name]
+            region = cls._regions[key_name]
             region.add_ip_prefix(ip_network)
         except KeyError:
             # if region doesn't exist, create it and add it to the regions dict
             region = AWSRegion(ip_network.region)
             region.add_ip_prefix(ip_network)
-            cls.__regions[key_name] = region
+            cls._regions[key_name] = region
 
     @classmethod
     def _set_aws_ip_prefix(cls, json_date: dict[str, str | list[dict]]) -> None:
@@ -188,19 +212,6 @@ class AWSIpRange:
         cls.__create_date = datetime.strptime(create_date, '%Y-%m-%d-%H-%M-%S')
 
         cls._set_aws_ip_prefix(json_data)
-
-    def __getattr__(self, item):
-        # Return regions as class attributes
-        if item in self.__regions:
-            return self.__regions[item]
-        raise AttributeError
-
-    def __contains__(self, ip: ipaddress.IPv4Address | ipaddress.IPv6Address | str) -> bool:
-        # Check if an IP address belongs to AWS
-        for region in self.__regions.values():
-            if ip in region:
-                return True
-        return False
 
 if __name__ == '__main__':
     AWSIpRange.update()
