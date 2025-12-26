@@ -126,25 +126,21 @@ class AWSIpRange:
 
     @classmethod
     def _set_aws_ip_prefix(cls, json_date: dict[str, str | list[dict]]) -> None:
+        # IPV4 prefixes
         for prefix in json_date['prefixes']:
+            ip_prefix = prefix['ip_prefix']
             region = prefix['region']
             service = prefix['service']
             network_border_group = prefix['network_border_group']
-            try:
-                ip_prefix = prefix['ip_prefix']
-                version = 4
-            except KeyError:
-                ip_prefix = prefix['ipv6_prefix']
-                version = 6
+            ip_network = AWSIPv4Prefix(ip_prefix, region, service,network_border_group)
 
-            # Create an AWS IP Prefix instance based on the CIDR IP version
-            if version == 4:
-                ip_network = AWSIPv4Prefix(ip_prefix, region, service, network_border_group)
-            elif version == 6:
-                ip_network = AWSIPv6Prefix(ip_prefix, region, service, network_border_group)
-            else:
-                raise Exception('Unsupported CIDR version')
-            cls._add_to_region_attribute(ip_network)
+        # IPV6 prefixes
+        for prefix in json_date['ipv6_prefixes']:
+            ip_prefix = prefix['ipv6_prefix']
+            region = prefix['region']
+            service = prefix['service']
+            network_border_group = prefix['network_border_group']
+            ip_network = AWSIPv6Prefix(ip_prefix, region, service,network_border_group)
 
 
     @classmethod
