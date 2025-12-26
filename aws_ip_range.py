@@ -71,6 +71,9 @@ class AWSRegion:
     def __str__(self):
         return f'Region: {self.name} IPV4: {len(self._ipv4_prefixes)} IPV6: {len(self._ipv6_prefixes)} '
 
+    def __repr__(self):
+        return f'AWSRegion(Region: {self.name} IPV4: {len(self._ipv4_prefixes)} IPV6: {len(self._ipv6_prefixes)})'
+
 class AWSIpRange:
     """
     Represents the published AWS IP range
@@ -133,6 +136,7 @@ class AWSIpRange:
             service = prefix['service']
             network_border_group = prefix['network_border_group']
             ip_network = AWSIPv4Prefix(ip_prefix, region, service,network_border_group)
+            cls._add_to_region_attribute(ip_network)
 
         # IPV6 prefixes
         for prefix in json_date['ipv6_prefixes']:
@@ -141,7 +145,7 @@ class AWSIpRange:
             service = prefix['service']
             network_border_group = prefix['network_border_group']
             ip_network = AWSIPv6Prefix(ip_prefix, region, service,network_border_group)
-
+            cls._add_to_region_attribute(ip_network)
 
     @classmethod
     def update(cls):
