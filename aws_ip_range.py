@@ -75,17 +75,16 @@ class AWSRegion:
         return f'AWSRegion(Region: {self.name} IPV4: {len(self._ipv4_prefixes)} IPV6: {len(self._ipv6_prefixes)})'
 
     def __contains__(self, ip: ipaddress.IPv4Address | ipaddress.IPv6Address | str) -> bool:
-        if isinstance(ip, ipaddress.IPv4Address):
-            return ip in self._ipv4_prefixes
-        if isinstance(ip, ipaddress.IPv6Address):
-            return ip in self._ipv6_prefixes
         if isinstance(ip, str):
             # if string is provided, turn it into an ip address
             try:
-                ip_address = ipaddress.ip_address(ip)
-                return ip_address in self._ipv4_prefixes or ip_address in self._ipv6_prefixes
+                ip = ipaddress.ip_address(ip)
             except ValueError:
                 raise AWSIPAddrInvalidError(f'Invalid IP address {ip}')
+        if isinstance(ip, ipaddress.IPv4Address):
+            return any(ip in ip_network for ip_network in self._ipv4_prefixes)
+        if isinstance(ip, ipaddress.IPv6Address):
+            return any(ip in ip_network for ip_network in self._ipv6_prefixes)
 
         raise TypeError(f'Unsupported type {type(ip)}')
 
@@ -201,7 +200,6 @@ class AWSIpRange:
         for region in self.__regions.values():
             if ip in region:
                 return True
-            continue
         return False
 
 if __name__ == '__main__':
