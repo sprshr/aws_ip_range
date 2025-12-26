@@ -104,6 +104,9 @@ class AWSIpRange:
     # Last update (naive)
     __create_date: datetime | None = None
 
+    # AWS regions
+    __regions: dict[str, AWSRegion] = {}
+
     #Add the current IP Address range URL to the docstring
     __doc__ = __doc__ + __current_range_url
 
@@ -124,24 +127,23 @@ class AWSIpRange:
         return network.version
 
     @classmethod
-    def _add_to_region_attribute(cls, ip_network: AWSIPv4Prefix | AWSIPv6Prefix):
+    def _add_to_regions(cls, ip_network: AWSIPv4Prefix | AWSIPv6Prefix):
         f"""
         Creates an attribute for {cls.__name__} based on the region of a given ip network.
         If the attribute is already present, the ip network will be added to the attribute.
         """
 
-        attribute_name = ip_network.region.upper().replace('-', '_')
+        key_name = ip_network.region.upper().replace('-', '_')
 
         # Get the attribute for the region
-        region_attribute = getattr(cls, attribute_name, None)
-
-        # If the region attribute does not exist, set the attribute
-        if region_attribute is None:
-            region_attribute = AWSRegion(attribute_name)
-            setattr(cls, attribute_name, region_attribute)
-
-        # Add the ip_prefix to the region
-        region_attribute.add_ip_prefix(ip_network)
+        try:
+            region = cls.__regions[key_name]
+            region.add_ip_prefix(ip_network)
+        except KeyError:
+            # if region doesn't exist, create it and add it to the regions dict
+            region = AWSRegion(ip_network.region)
+            region.add_ip_prefix(ip_network)
+            cls.__regions[key_name] = region
 
     @classmethod
     def _set_aws_ip_prefix(cls, json_date: dict[str, str | list[dict]]) -> None:
@@ -152,7 +154,7 @@ class AWSIpRange:
             service = prefix['service']
             network_border_group = prefix['network_border_group']
             ip_network = AWSIPv4Prefix(ip_prefix, region, service,network_border_group)
-            cls._add_to_region_attribute(ip_network)
+            cls._add_to_regions(ip_network)
 
         # IPV6 prefixes
         for prefix in json_date['ipv6_prefixes']:
@@ -161,7 +163,7 @@ class AWSIpRange:
             service = prefix['service']
             network_border_group = prefix['network_border_group']
             ip_network = AWSIPv6Prefix(ip_prefix, region, service,network_border_group)
-            cls._add_to_region_attribute(ip_network)
+            cls._add_to_regions(ip_network)
 
     @classmethod
     def update(cls):
@@ -187,6 +189,19 @@ class AWSIpRange:
         cls.__create_date = datetime.strptime(create_date, '%Y-%m-%d-%H-%M-%S')
 
         cls._set_aws_ip_prefix(json_data)
+
+    def __getattr__(self, item):
+        # Return regions as class attributes
+        if item in self.__regions:
+            return self.__regions[item]
+        raise AttributeError
+
+    def __contains__(self, ip: ipaddress.IPv4Address | ipaddress.IPv6Address | str) -> bool:
+        for region in self.__regions.values():
+            if ip in region:
+                return True
+            continue
+        return False
 
 
 if __name__ == '__main__':
