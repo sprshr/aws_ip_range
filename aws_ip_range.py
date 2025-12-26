@@ -12,6 +12,11 @@ class AWSIPAddrInvalidError(Exception):
         self.message = message
         super().__init__(self.message)
 
+class AWSRegionDoesNotExistError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
 class AbstractAWSIPPrefix:
     """
     Abstract AWS IP Prefix class
@@ -113,9 +118,11 @@ class AWSIpRangeMeta(type):
 
     def __getattr__(cls, item):
         # Return regions as class attributes
-        if item in cls._regions:
+        cls._check_data()
+        try:
             return cls._regions[item]
-        raise AttributeError
+        except KeyError:
+            raise AWSRegionDoesNotExistError(f'AWS Region {item} does not exist') from None
 
 class AWSIpRange(metaclass=AWSIpRangeMeta):
     """
@@ -212,6 +219,3 @@ class AWSIpRange(metaclass=AWSIpRangeMeta):
         cls.__create_date = datetime.strptime(create_date, '%Y-%m-%d-%H-%M-%S')
 
         cls._set_aws_ip_prefix(json_data)
-
-if __name__ == '__main__':
-    AWSIpRange.update()
