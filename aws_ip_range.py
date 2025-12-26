@@ -1,0 +1,177 @@
+import ipaddress
+import requests
+from datetime import datetime
+
+class AWSIPRangeFetchError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+class AWSIPAddrInvalidError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
+
+class AbstractAWSIPPrefix:
+    """
+    Abstract AWS IP Prefix class
+    Needs to be inherited by another class that handles IP versioning
+    """
+    def __init__(self, *args, region: str, service: str, network_border_group: str, **kwargs):
+        self._service = service
+        self._region = region
+        self._network_border_group = network_border_group
+        super().__init__(*args, **kwargs)
+
+    @property
+    def service(self) -> str:
+        return self._service
+
+    @property
+    def network_border_group(self) -> str:
+        return self._network_border_group
+
+    @property
+    def region(self) -> str:
+        return self._region
+
+
+class AWSIPv4Prefix(AbstractAWSIPPrefix, ipaddress.IPv4Network):
+    def __init__(self, prefix: str, region: str, service: str, network_border_group: str):
+        super().__init__(
+            prefix,
+            region = region,
+            service = service,
+            network_border_group = network_border_group
+        )
+
+class AWSIPv6Prefix(AbstractAWSIPPrefix, ipaddress.IPv6Network):
+    def __init__(self, prefix: str, region: str, service: str, network_border_group: str):
+        super().__init__(
+            prefix,
+            region = region,
+            service = service,
+            network_border_group = network_border_group
+        )
+
+class AWSRegion:
+    def __init__(self, name):
+        self.name = name
+        self._ipv4_prefixes = []
+        self._ipv6_prefixes = []
+
+    def add_ip_prefix(self, prefix: AWSIPv4Prefix | AWSIPv6Prefix) -> None:
+        if prefix.version == 4:
+            self._ipv4_prefixes.append(prefix)
+            return
+        if prefix.version == 6:
+            self._ipv6_prefixes.append(prefix)
+            return
+
+    def __str__(self):
+        return f'Region: {self.name} IPV4: {len(self._ipv4_prefixes)} IPV6: {len(self._ipv6_prefixes)} '
+
+class AWSIpRange:
+    """
+    Represents the published AWS IP range
+    """
+
+    # The current IP Address range is available as a json here
+    __current_range_url: str = 'https://ip-ranges.amazonaws.com/ip-ranges.json'
+
+    # Sync token updated everytime the range is updated
+    __sync_token: str | None = None
+
+    # Last update (naive)
+    __create_date: datetime | None = None
+
+    #Add the current IP Address range URL to the docstring
+    __doc__ = __doc__ + __current_range_url
+
+    def __init__(self, fetch_aws_ip_ranges: bool = False):
+        if fetch_aws_ip_ranges:
+            AWSIpRange.update()
+
+    @staticmethod
+    def _get_cidr_version(cidr: str) -> int:
+        """
+        Return the ip version of a CIDR block
+        """
+        try:
+            network = ipaddress.ip_network(cidr)
+        except ValueError:
+            raise ValueError(f'{cidr} is not a valid CIDR block')
+
+        return network.version
+
+    @classmethod
+    def _add_to_region_attribute(cls, ip_network: AWSIPv4Prefix | AWSIPv6Prefix):
+        f"""
+        Creates an attribute for {cls.__name__} based on the region of a given ip network.
+        If the attribute is already present, the ip network will be added to the attribute.
+        """
+
+        attribute_name = ip_network.region.upper().replace('-', '_')
+
+        # Get the attribute for the region
+        region_attribute = getattr(cls, attribute_name, None)
+
+        # If the region attribute does not exist, set the attribute
+        if region_attribute is None:
+            region_attribute = AWSRegion(attribute_name)
+            setattr(cls, attribute_name, region_attribute)
+
+        # Add the ip_prefix to the region
+        region_attribute.add_ip_prefix(ip_network)
+
+    @classmethod
+    def _set_aws_ip_prefix(cls, json_date: dict[str, str | list[dict]]) -> None:
+        for prefix in json_date['prefixes']:
+            region = prefix['region']
+            service = prefix['service']
+            network_border_group = prefix['network_border_group']
+            try:
+                ip_prefix = prefix['ip_prefix']
+                version = 4
+            except KeyError:
+                ip_prefix = prefix['ipv6_prefix']
+                version = 6
+
+            # Create an AWS IP Prefix instance based on the CIDR IP version
+            if version == 4:
+                ip_network = AWSIPv4Prefix(ip_prefix, region, service, network_border_group)
+            elif version == 6:
+                ip_network = AWSIPv6Prefix(ip_prefix, region, service, network_border_group)
+            else:
+                raise Exception('Unsupported CIDR version')
+            cls._add_to_region_attribute(ip_network)
+
+
+    @classmethod
+    def update(cls):
+        """
+        Updates the AWS IP range
+        """
+        r = requests.get(cls.__current_range_url)
+
+        # Check if the requests was successful
+        if r.status_code != requests.codes.ok:
+            log_msg = f'Failed to get AWS IP range with status code {r.status_code}'
+            raise AWSIPRangeFetchError(log_msg)
+
+        # get the json payload
+        json_data = r.json()
+
+        # get sync_token and create_date
+        sync_token = json_data['syncToken']
+        create_date: str = json_data['createDate']
+
+        # Update sync token and createDate
+        cls.__sync_token = sync_token
+        cls.__create_date = datetime.strptime(create_date, '%Y-%m-%d-%H-%M-%S')
+
+        cls._set_aws_ip_prefix(json_data)
+
+
+if __name__ == '__main__':
+    AWSIpRange.update()
