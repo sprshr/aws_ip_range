@@ -197,12 +197,12 @@ class AWSIpRange:
         raise AttributeError
 
     def __contains__(self, ip: ipaddress.IPv4Address | ipaddress.IPv6Address | str) -> bool:
+        # Check if an IP address belongs to AWS
         for region in self.__regions.values():
             if ip in region:
                 return True
             continue
         return False
-
 
 if __name__ == '__main__':
     AWSIpRange.update()
